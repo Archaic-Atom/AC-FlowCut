@@ -1,0 +1,22 @@
+# Tested with the conda environment `visualcut` (Python 3.10.19, CUDA 12.1).
+# Install PyTorch from the CUDA 12.1 index when creating a new environment.
+torch==2.1.2
+torchvision==0.16.2
+transformers==4.37.2
+tokenizers==0.15.1
+sentencepiece==0.1.99
+accelerate==0.21.0
+numpy==1.26.4
+Pillow==10.4.0
+einops==0.6.1
+einops-exts==0.0.4
+timm==0.6.13
+safetensors==0.7.0
+shortuuid==1.0.13
+requests>=2.31
+
+# Optional but used by the LLaVA runtime when FlashAttention2 is enabled.
+# Install a wheel matching the local CUDA/PyTorch ABI if no compatible wheel is
+# available from PyPI; the released selector itself also works with eager/SDPA
+# attention.
+flash-attn==2.7.3
