@@ -8,7 +8,6 @@ from typing import Any, Dict, Literal, Optional, Union
 class TokenReductionConfig:
     method: Literal["none", "flowcut"] = "flowcut"
     target_num: int = 128
-    vision_target_num: Optional[int] = None
     vision_stage_enabled: bool = True
     llm_stage_enabled: Optional[bool] = None
     vision_target_factor_anyres: float = 0.5
@@ -21,19 +20,17 @@ class TokenReductionConfig:
     vision_score_accumulation_mode: Literal["ema"] = "ema"
     trace_enabled: bool = False
     trace_dir: Optional[str] = None
-    strict_global_visual_budget: bool = False
+    strict_global_visual_budget: bool = True
     vision_selection_mode: Literal["topk", "attention_coreset"] = "topk"
     attention_coreset_protect_core: bool = True
     attention_coreset_query_scope: Literal["all", "cls"] = "all"
-    llm_selection_mode: Literal["flowcut", "attention_coreset"] = "flowcut"
+    llm_selection_mode: Literal["flowcut"] = "flowcut"
 
     def __post_init__(self):
         if self.method not in {"none", "flowcut"}:
             raise ValueError(f"Unknown token reduction method: {self.method}")
         if self.target_num < 1:
             raise ValueError("target_num must be >= 1")
-        if self.vision_target_num is not None and self.vision_target_num < self.target_num:
-            raise ValueError("vision_target_num must be >= target_num")
         if self.prune_interval < 1:
             raise ValueError("prune_interval must be >= 1")
         if not 0.0 <= self.ema_alpha <= 1.0:
@@ -48,8 +45,11 @@ class TokenReductionConfig:
             raise ValueError(f"Unknown vision_selection_mode: {self.vision_selection_mode}")
         if self.attention_coreset_query_scope not in {"all", "cls"}:
             raise ValueError(f"Unknown attention_coreset_query_scope: {self.attention_coreset_query_scope}")
-        if self.llm_selection_mode not in {"flowcut", "attention_coreset"}:
-            raise ValueError(f"Unknown llm_selection_mode: {self.llm_selection_mode}")
+        if self.llm_selection_mode != "flowcut":
+            raise ValueError(
+                "LLM attention-output repair is not supported. "
+                "Use llm_selection_mode='flowcut'; AC repair runs only in the vision encoder."
+            )
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
@@ -60,8 +60,6 @@ def build_config(
     **kwargs,
 ) -> TokenReductionConfig:
     if isinstance(config_or_method, TokenReductionConfig):
-        if not kwargs:
-            return config_or_method
         data = config_or_method.to_dict()
         data.update(kwargs)
     elif isinstance(config_or_method, dict):
@@ -72,9 +70,18 @@ def build_config(
         if config_or_method is not None:
             data["method"] = config_or_method
 
+    # Accept redundant old JSON settings, but never let a second budget
+    # override target_num. The removed option is not serialized again.
+    legacy_target = data.pop("vision_target_num", None)
+    target_num = data.get("target_num", TokenReductionConfig.target_num)
+    if legacy_target is not None and legacy_target != target_num:
+        raise ValueError(
+            "vision_target_num has been removed; target_num is the only token budget. "
+            "Delete vision_target_num from the configuration."
+        )
+
     method = data.get("method", "flowcut")
     if method == "ac_flowcut":
         data["method"] = "flowcut"
         data.setdefault("vision_selection_mode", "attention_coreset")
-        data.setdefault("llm_selection_mode", "attention_coreset")
     return TokenReductionConfig(**data)
