@@ -65,12 +65,12 @@ def _refresh_accelerate_vision_forwards(vision_root):
         module.forward = wrapped_forward
 
 
-def _compute_vision_target(model, config, requested_target=None):
+def _compute_vision_target(model, config):
     image_aspect_ratio = getattr(model.config, "image_aspect_ratio", "pad")
     select_feature = model.model.vision_tower.select_feature
-    requested_target = requested_target or config.vision_target_num or config.target_num
+    requested_target = config.target_num
     if image_aspect_ratio == "anyres":
-        base = int(requested_target * config.vision_target_factor_anyres)
+        base = max(1, int(requested_target * config.vision_target_factor_anyres))
         return base + 1 if select_feature == "patch" else base
     return requested_target + 1 if select_feature == "patch" else requested_target
 
@@ -133,6 +133,12 @@ def apply_token_reduction(model, config_or_method=None, **kwargs):
     if config.llm_stage_enabled is None:
         config.llm_stage_enabled = image_aspect_ratio == "anyres"
 
+    if config.method != "none" and image_aspect_ratio == "anyres" and not config.llm_stage_enabled:
+        raise ValueError(
+            "Any-resolution pruning requires llm_stage_enabled=True for the final global "
+            "target_num cut. This stage uses FlowCut top-k, without AC repair."
+        )
+
     if config.method == "none":
         model.model.token_reduction_config = config
         model.model.token_reduction_strategy = strategy
@@ -178,13 +184,13 @@ def ac_flowcut(model, target_num=128, **kwargs):
 
     FlowCut's progressive trajectory is retained.  At the final visual cut,
     AC-FlowCut protects the ranked core and greedily repairs a small boundary
-    using the normalized multi-query attention-output proxy.  Any-resolution
-    models additionally use the same criterion at the first LLM pruning layer.
+    using the normalized multi-query attention-output proxy. Any-resolution
+    models use ordinary FlowCut top-k at the LLM pruning layer to enforce the
+    final global target_num budget; AC repair runs only in the vision encoder.
     """
     kwargs.setdefault("method", "flowcut")
     kwargs.setdefault("target_num", target_num)
     kwargs.setdefault("vision_selection_mode", "attention_coreset")
-    kwargs.setdefault("llm_selection_mode", "attention_coreset")
     return apply_token_reduction(model, kwargs)
 
 
