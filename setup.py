@@ -7,7 +7,7 @@ ROOT = Path(__file__).parent
 
 setup(
     name="ac-flowcut",
-    version="0.1.0",
+    version="0.1.1",
     packages=find_packages(),
     author="VisualCut authors",
     description="AC-FlowCut: training-free attention-output repair for visual token pruning",
