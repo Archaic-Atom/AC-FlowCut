@@ -58,22 +58,9 @@ class FlowCutStrategy(TokenReductionStrategy):
                 semantic_weight, dim=-1, dtype=torch.float32
             ).to(query_states.dtype).mean(0)
             score = compute_score(relation_attn, semantic_attn, vis_v.mean(0)).squeeze(0)
-            if getattr(self.config, "llm_selection_mode", "flowcut") == "attention_coreset":
-                from ..utils_flowcut import llm_attention_output_coreset_select
-                keep, llm_summary = llm_attention_output_coreset_select(
-                    flow_score=score,
-                    query_states=query_states[b],
-                    key_states=key_states[b],
-                    value_states=value_states[b],
-                    visual_start=start,
-                    visual_len=visual_token_num[b],
-                    text_start=(text_token_pos[b] if text_token_pos is not None else end),
-                    text_num=(text_token_num[b] if text_token_num is not None else 1),
-                    target_num=target_num,
-                )
-            else:
-                keep = self.select_from_score(score.unsqueeze(0), target_num).squeeze(0)
-                llm_summary = None
+            # AnyRes still needs a final global cut. Use the original FlowCut
+            # ranking here; attention-output repair is confined to the ViT.
+            keep = self.select_from_score(score.unsqueeze(0), target_num).squeeze(0)
             keep_indices.append(keep)
             merged_states.append(None)
             if owner is not None:
@@ -88,7 +75,7 @@ class FlowCutStrategy(TokenReductionStrategy):
                     keep_indices=keep,
                     score_summary={
                         "final": summarize_tensor(score),
-                        "attention_output_coreset": llm_summary,
+                        "selection_mode": "flowcut",
                     },
                 )
         return {"keep_indices": keep_indices, "merged_states": merged_states}
